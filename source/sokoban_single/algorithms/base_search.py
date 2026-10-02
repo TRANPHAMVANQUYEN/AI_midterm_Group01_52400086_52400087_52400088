@@ -1,13 +1,10 @@
 import time
 import tracemalloc
-
 from sokoban_single.models.action import Action, Direction
 from sokoban_single.models.problem import SokobanProblem
 from sokoban_single.models.state import State
 
-
 class Node:
-    """Node của cây tìm kiếm."""
     __slots__ = ("state", "parent", "action", "g_cost", "h_cost", "f_cost")
 
     def __init__(self, state: State, parent=None, action: Direction | None = None,
