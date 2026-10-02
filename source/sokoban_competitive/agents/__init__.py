@@ -1,0 +1,1 @@
+"""Search agents for competitive Sokoban."""

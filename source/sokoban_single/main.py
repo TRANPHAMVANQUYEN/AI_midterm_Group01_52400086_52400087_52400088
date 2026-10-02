@@ -6,7 +6,6 @@ from sokoban_single.ui.game_gui import game_gui
 pygame.init()
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("Choose map")
-font = pygame.font.SysFont("arial", 24)
 clock = pygame.time.Clock()
 
 MAPS_DIR = "maps"
