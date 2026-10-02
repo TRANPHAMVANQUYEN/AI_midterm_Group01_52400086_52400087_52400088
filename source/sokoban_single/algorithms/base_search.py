@@ -1,50 +1,72 @@
 import time
+import tracemalloc
 
-import os
-from sokoban_single.models.action import Action
+from sokoban_single.models.action import Action, Direction
 from sokoban_single.models.problem import SokobanProblem
 from sokoban_single.models.state import State
 
 
-# Node dùng để lưu thông tin cây tìm kiếm
 class Node:
-    def __init__(self, state: State, parent=None, action=None, g_cost: int = 0, h_cost: int = 0):
-        self.state = state        # Trạng thái hiện tại
-        self.parent = parent      # Node cha
-        self.action = action      # Hành động dẫn tới node này
-        self.g_cost = g_cost      # Chi phí thực tế từ điểm đầu (g)
-        self.h_cost = h_cost      # Chi phí ước lượng tới đích (h)
-        self.f_cost = g_cost + h_cost  # Tổng chi phí f = g + h
+    """Node của cây tìm kiếm."""
+    __slots__ = ("state", "parent", "action", "g_cost", "h_cost", "f_cost")
 
-    # So sánh độ ưu tiên trong hàng đợi heapq (so sánh giá trị f_cost)
-    def __lt__(self, other):
-        return self.f_cost < other.f_cost
+    def __init__(self, state: State, parent=None, action: Direction | None = None,
+                 g_cost: int = 0, h_cost: int = 0):
+        self.state = state
+        self.parent = parent
+        self.action = action
+        self.g_cost = g_cost            # chi phí thực từ đầu tới đây
+        self.h_cost = h_cost            # ước lượng tới đích
+        self.f_cost = g_cost + h_cost   # f = g + h
+
+    def __lt__(self, other: "Node") -> bool:
+        # Hòa f thì ưu tiên node có h nhỏ hơn (gần đích hơn)
+        return (self.f_cost, self.h_cost) < (other.f_cost, other.h_cost)
 
 
-# Lớp trừu tượng cho các thuật toán tìm kiếm
 class BaseSearch:
-    def __init__(self):
-        self.nodes_expanded = 0   # Số lượng node đã duyệt
-        self.execution_time = 0.0 # Thời gian thực thi (giây)
-        self.memory_used = 0.0    # Bộ nhớ tiêu thụ (MB)
+    """Lớp cha cho UCS và A*: lo đo đạc, lớp con chỉ cài _search."""
 
-    # Hàm truy vết lại danh sách các hành động từ đích về đầu
-    def reconstruct_path(self, node: Node) -> list[str]:
+    def __init__(self):
+        self.nodes_expanded = 0
+        self.nodes_generated = 0
+        self.max_frontier = 0        # số node lớn nhất trong frontier
+        self.execution_time = 0.0    # giây
+        self.memory_used = 0.0       # MB (bộ nhớ đỉnh Python cấp phát)
+
+    def solve(self, problem: SokobanProblem) -> list[Direction] | None:
+        """Chạy tìm kiếm, đo thời gian và bộ nhớ. Trả về path hoặc None."""
+        self.nodes_expanded = 0
+        self.nodes_generated = 0
+        self.max_frontier = 0
+
+        tracemalloc.start()
+        start = time.perf_counter()
+        goal_node = self._search(problem)
+        self.execution_time = time.perf_counter() - start
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        self.memory_used = peak / (1024 * 1024)
+
+        if goal_node is None:
+            return None
+        return self.reconstruct_path(goal_node)
+
+    def _search(self, problem: SokobanProblem) -> Node | None:
+        """Trả về node đích, hoặc None nếu vô nghiệm. Lớp con phải cài."""
+        raise NotImplementedError("Lớp con phải cài đặt _search.")
+
+    @staticmethod
+    def reconstruct_path(node: Node) -> list[Direction]:
+        """Truy vết từ node đích về đầu, trả về list Direction."""
         path = []
-        curr = node
-        while curr.parent is not None:
-            # Chuyển hướng di chuyển sang định dạng chuỗi tiếng Anh (North, South...)[cite: 1]
-            action_str = Action.to_string(curr.action)
-            path.append(action_str)
-            curr = curr.parent
-        path.reverse()  # Đảo ngược lại để được chuỗi từ đầu đến đích
+        while node.parent is not None:
+            path.append(node.action)
+            node = node.parent
+        path.reverse()
         return path
 
-    # Đo lượng bộ nhớ RAM đang sử dụng (MB)
-    def get_memory_usage(self) -> float:
-        process = psutil.Process(os.getpid())
-        return process.memory_info().rss / (1024 * 1024)
-
-    # Hàm giải bài toán (sẽ được các lớp UCS và AStar ghi đè)
-    def solve(self, problem: SokobanProblem):
-        raise NotImplementedError("Hàm solve phải được cài đặt ở lớp con.")
+    @staticmethod
+    def path_to_strings(path: list[Direction]) -> list[str]:
+        """Đổi path sang North/South/West/East để in theo đề."""
+        return [Action.to_string(d) for d in path]

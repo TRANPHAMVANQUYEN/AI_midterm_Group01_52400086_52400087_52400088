@@ -1,74 +1,43 @@
-import os
 import sys
 
-# Tự động định vị thư mục gốc 'source' để import không bị lỗi
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from common.board import Board
-from sokoban_single.algorithms.a_star import AStarSearch
-from sokoban_single.algorithms.ucs import UCSSearch
+from sokoban_single.algorithms.a_star import AStar
+from sokoban_single.algorithms.ucs import UCS
 from sokoban_single.models.problem import SokobanProblem
-from sokoban_single.ui.game_gui import GameGUI
-from sokoban_single.ui.menu import MenuGUI
+
+DEFAULT_MAP = "maps/example_map.txt"
+ALGORITHMS = {"astar": ("A*", AStar), "ucs": ("UCS", UCS)}
 
 
 def main():
-    # 1. Đường dẫn file bản đồ (Mặc định lấy file example_map.txt)
-    map_path = "maps/example_map.txt"
-    if not os.path.exists(map_path):
-        os.makedirs("maps", exist_ok=True)
-        with open(map_path, "w") as f:
-            f.write("%%%%%\n%DAB%\n%%%%%")
+    map_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MAP
+    chosen = sys.argv[2:] or list(ALGORITHMS)   # vd: python -m sokoban_single.main map.txt astar
 
-    # 2. Hiển thị Menu GUI chọn thuật toán (UCS hoặc A*)
-    menu = MenuGUI()
-    algo_choice = menu.run()
+    problem = SokobanProblem(Board(map_path))
+    print("Map:", map_path)
 
-    # Nếu người dùng tắt cửa sổ Menu thì thoát chương trình
-    if algo_choice is None:
-        print("Đã đóng Menu.")
-        return
+    costs = {}
+    for key in chosen:
+        name, cls = ALGORITHMS[key]
+        solver = cls()
+        path = solver.solve(problem)
+        costs[name] = None if path is None else len(path)
 
-    # 3. Nạp bản đồ và tạo đối tượng bài toán[cite: 1]
-    board = Board(map_path)
-    problem = SokobanProblem(board)
+        print()
+        print(f"=== {name} ===")
+        if path is None:
+            print("Không có lời giải")
+        else:
+            print("Actions:", ", ".join(solver.path_to_strings(path)))
+            print("Total cost:", len(path))
+        print("Expanded:", solver.nodes_expanded)
+        print("Generated:", solver.nodes_generated)
+        print("Max frontier:", solver.max_frontier)
+        print(f"Time: {solver.execution_time:.3f} s")
+        print(f"Memory: {solver.memory_used:.1f} MB")
 
-    # 4. Thực thi thuật toán được chọn từ Menu
-    if algo_choice == "UCS":
-        print("\n--> Đang thực thi Uniform Cost Search (UCS)...")
-        solver = UCSSearch()
-        actions, cost, expanded, time_sec, mem_mb = solver.solve(problem)
-        algo_name = "UCS"
-    else:
-        print("\n--> Đang thực thi A* Search (BFS Real Distance Heuristic)...")
-        solver = AStarSearch(board)
-        actions, cost, expanded, time_sec, mem_mb = solver.solve(problem)
-        algo_name = "A*"
-
-    # 5. In thông số thực nghiệm ra Console
-    print("--------------------------------------------------")
-    print(f"KẾT QUẢ THỰC NGHIỆM ({algo_name}):")
-    print("Danh sách nước đi:", actions)
-    print("Tổng chi phí (Cost):", cost)
-    print("Số node đã mở (Nodes Expanded):", expanded)
-    print(f"Thời gian xử lý: {time_sec:.4f} giây")
-    print(f"Dung lượng bộ nhớ: {mem_mb:.2f} MB")
-    print("--------------------------------------------------\n")
-
-    if actions is None:
-        print("Bản đồ này không có lời giải!")
-        return
-
-    # 6. Đóng gói thông số hiệu năng và khởi chạy giao diện xem lời giải (GameGUI)
-    stats = {
-        "cost": cost,
-        "nodes": expanded,
-        "time": time_sec,
-        "memory": mem_mb
-    }
-
-    gui = GameGUI(board, problem, actions, stats)
-    gui.run()
+    if len(set(costs.values())) > 1:
+        print("\nCẢNH BÁO: cost các thuật toán khác nhau, kiểm tra heuristic hoặc bug!")
 
 
 if __name__ == "__main__":

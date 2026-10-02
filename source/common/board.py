@@ -1,5 +1,4 @@
 # Đọc file ma trận là bản đồ của trò chơi
-from importlib.resources import path
 import os
 class Board:
     def __init__(self, map_path: str):

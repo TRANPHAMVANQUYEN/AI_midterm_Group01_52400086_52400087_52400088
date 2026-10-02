@@ -5,6 +5,7 @@ class Direction(enum.Enum):
     DOWN = (1, 0)
     LEFT = (0, -1)
     RIGHT = (0, 1)
+    
 class Action:
     NAME_MAP ={
         Direction.UP: "North",

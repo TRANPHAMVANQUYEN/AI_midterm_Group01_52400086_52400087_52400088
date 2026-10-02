@@ -1,61 +1,101 @@
+from collections import deque
 from common.board import Board
 from sokoban_single.models.action import Action, Direction
 from sokoban_single.models.state import State
 
-
-# Lớp SokobanProblem chịu trách nhiệm mô hình hóa bài toán tìm kiếm không gian trạng thái
 class SokobanProblem:
     def __init__(self, board: Board):
-        # Lưu tham chiếu tới đối tượng Board chứa thông tin tĩnh như Tường và Đích
         self.board = board
 
-        # Tạo Trạng thái ban đầu (Initial State) từ vị trí Agent và Thùng do Board khởi tạo[cite: 1]
+        # Tạo Trạng thái ban đầu từ vị trí Agent và Thùng do Board khởi tạo
         self.initial_state = State(
             agent_pos=self.board.initial_agent_pos,
             boxes_pos=self.board.initial_boxes_pos
         )
+        # Thống nhất dùng self.deadlocks_pos
+        self.deadlocks_pos = self.find_deadlocks()
 
-    # Kiểm tra xem trạng thái hiện tại đã đạt mục tiêu chưa[cite: 1]
     def is_goal(self, state: State) -> bool:
-        # Đạt mục tiêu khi tập hợp tất cả vị trí thùng trùng hoàn toàn với tập hợp các vị trí đích[cite: 1]
-        return state.boxes_pos == self.board.targets
+        return state.boxes_pos == self.board.target
 
-    # Hàm sinh các trạng thái kế tiếp hợp lệ từ trạng thái hiện tại[cite: 1]
-    def get_successors(self, state: State) -> list[tuple[State, tuple[int, int], int]]:
+    def find_deadlocks(self) -> set[tuple[int, int]]:
+        reachable_pos = set()
+        queue = deque()
+        visited_pull = set()
+
+        # Khởi tạo từ các điểm Đích
+        for target_pos in self.board.target:
+            reachable_pos.add(target_pos)  # Ô đích chính là ô thùng đứng hợp lệ
+            
+            for direction in Direction:
+                dr, dc = Action.get_delta(direction)
+                pull_agent_pos = (target_pos[0] + dr, target_pos[1] + dc)
+                
+                if not self.board.is_wall(pull_agent_pos):
+                    state_key = (target_pos, pull_agent_pos)
+                    queue.append(state_key)
+                    visited_pull.add(state_key)
+
+        #BFS Loang để tìm tất cả các ô trống có thể kéo thùng tới từ các ô đích
+        while queue:
+            box_pos, agent_pos = queue.popleft()
+            reachable_pos.add(box_pos)
+
+            for direction in Direction:
+                dr, dc = Action.get_delta(direction)
+                # Ô thùng dịch chuyển tới khi kéo
+                new_box_pos = (box_pos[0] + dr, box_pos[1] + dc)
+                # Ô Agent phải đứng để thực hiện lực kéo
+                new_agent_pos = (new_box_pos[0] + dr, new_box_pos[1] + dc)
+
+                # Cả ô thùng mới và ô agent đứng kéo đều không được là TƯỜNG
+                if not self.board.is_wall(new_box_pos) and not self.board.is_wall(new_agent_pos):
+                    pull_state = (new_box_pos, new_agent_pos)
+                    
+                    if pull_state not in visited_pull:
+                        visited_pull.add(pull_state)
+                        queue.append(pull_state)
+
+        # 3. Lọc Deadlock: Tất cả ô trống KHÔNG THỂ kéo tới từ Đích
+        deadlock_positions = set()
+        for r in range(self.board.height):
+            for c in range(self.board.width):
+                pos = (r, c)
+                if not self.board.is_wall(pos) and pos not in reachable_pos:
+                    deadlock_positions.add(pos)
+
+        return deadlock_positions
+
+    def get_successors(self, state: State) -> list[tuple[State, Direction, int]]:
         successors = []
-        agent_r, agent_c = state.agent_pos  # Tọa độ hàng và cột hiện tại của Agent
+        agent_r, agent_c = state.agent_pos
 
-        # Duyệt qua từng hướng di chuyển trong danh sách 4 hướng[cite: 1]
-        for direction in Direction.ALL:
+        for direction in Direction:
             dr, dc = Action.get_delta(direction)
-            next_agent_pos = (agent_r + dr, agent_c + dc)  # Tọa độ Agent dự kiến bước tới
+            next_agent_pos = (agent_r + dr, agent_c + dc)
 
-            # Trường hợp 1: Ô kế tiếp là TƯỜNG (%) -> Bị cản, không đi được[cite: 1]
             if self.board.is_wall(next_agent_pos):
                 continue
 
-            # Trường hợp 2: Ô kế tiếp có THÙNG (B hoặc C) -> Xử lý đẩy thùng[cite: 1]
             if state.is_box_at(next_agent_pos):
-                # Tọa độ dự kiến của Thùng sau khi bị đẩy cùng hướng
                 next_box_pos = (next_agent_pos[0] + dr, next_agent_pos[1] + dc)
 
-                # Kiểm tra cản của Thùng: Không được đẩy vào TƯỜNG hoặc THÙNG KHÁC[cite: 1]
                 if self.board.is_wall(next_box_pos) or state.is_box_at(next_box_pos):
                     continue
 
-                # Đẩy thùng thành công: Cập nhật vị trí các thùng
+                # Lọc Deadlock bằng tập deadlocks_pos
+                if next_box_pos in self.deadlocks_pos:
+                    continue
+
                 new_boxes_pos = set(state.boxes_pos)
-                new_boxes_pos.remove(next_agent_pos)  # Xóa vị trí cũ của thùng
-                new_boxes_pos.add(next_box_pos)       # Thêm vị trí mới của thùng
+                new_boxes_pos.remove(next_agent_pos)
+                new_boxes_pos.add(next_box_pos)
 
-                # Tạo State mới (Agent đứng ở vị trí cũ của thùng, Thùng dịch sang vị trí mới)
                 new_state = State(agent_pos=next_agent_pos, boxes_pos=new_boxes_pos)
-                successors.append((new_state, direction, 1))  # Chi phí mỗi bước đẩy là 1
+                successors.append((new_state, direction, 1))
 
-            # Trường hợp 3: Ô kế tiếp là Ô TRỐNG hoặc ĐÍCH (D) -> Agent tự di chuyển[cite: 1]
             else:
-                # Tạo State mới (Cập nhật vị trí Agent, giữ nguyên vị trí các thùng)
                 new_state = State(agent_pos=next_agent_pos, boxes_pos=state.boxes_pos)
-                successors.append((new_state, direction, 1))  # Chi phí mỗi bước đi là 1
+                successors.append((new_state, direction, 1))
 
         return successors

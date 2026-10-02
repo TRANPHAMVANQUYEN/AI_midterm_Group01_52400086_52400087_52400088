@@ -6,7 +6,7 @@ class State:
 
     def __eq__(self, other) -> bool:
         # Hai State được coi là bằng nhau nếu Agent và tất cả Thùng ở cùng vị trí
-        if not isinstance(other, State):
+        if not isinstance(other, State): # orther xem cái đối tượng so sánh đó có phải là một state hay ko nếu ko thì tiễn
             return False
         return self.agent_pos == other.agent_pos and self.boxes_pos == other.boxes_pos
 
